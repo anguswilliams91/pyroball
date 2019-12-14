@@ -18,7 +18,7 @@ class SVIDixonColesModel:
         self.index_to_team = None
         self.n_teams = None
 
-    def model(self, home_goals, away_goals, home_team, away_team):
+    def model(self, home_team, away_team):
 
         sigma_a = pyro.sample("sigma_a", dist.HalfNormal(1.0))
         sigma_b = pyro.sample("sigma_b", dist.HalfNormal(1.0))
@@ -38,7 +38,7 @@ class SVIDixonColesModel:
             pyro.sample("home_goals", dist.Poisson(home_rate))
             pyro.sample("away_goals", dist.Poisson(away_rate))
 
-    def guide(self, home_goals, away_goals, home_team, away_team):
+    def guide(self, home_team, away_team):
 
         scale_sigma_a = pyro.param("scale_sigma_a", torch.tensor(0.1), constraint=constraints.positive)
         scale_sigma_b = pyro.param("scale_sigma_b", torch.tensor(0.1), constraint=constraints.positive)
