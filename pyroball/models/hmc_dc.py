@@ -33,12 +33,3 @@ class HMCDixonColesModel:
             numpyro.sample("home_goals", dist.Poisson(home_rate), obs=home_goals)
             numpyro.sample("away_goals", dist.Poisson(away_rate), obs=away_goals)
 
-    def fit(
-        self,
-        n_steps=500,
-        optimiser_settings={"lr": 1.0e-2},
-        elbo_kwargs={"num_particles": 5},
-    ):
-        optimizer = Adam(optim_)
-        elbo = Trace_ELBO(**elbo_kwargs)
-        svi = SVI(self.model, self.guide, optimizer, loss=elbo)
