@@ -1,3 +1,4 @@
+from functools import lru_cache
 import logging
 
 import pyro
@@ -20,6 +21,7 @@ class VariationalDixonColesModel:
         self.team_to_index = None
         self.index_to_team = None
         self.n_teams = None
+        self.guide = None
         self._svi = None
 
     def model(self, home_team, away_team):
@@ -76,5 +78,26 @@ class VariationalDixonColesModel:
         fitted_svi, losses = early_stopping(svi, home_team, away_team, max_iter=max_iter, patience=patience)
 
         self._svi = fitted_svi
+        self.guide = guide
 
         return losses
+
+    @lru_cache(maxsize=128)
+    def _predict(self, home_team, away_team, num_samples=100):
+
+        predictive = Predictive(
+            self.model, 
+            guide=self.guide, 
+            num_samples=num_samples, 
+            return_sites=("home_goals", "away_goals")
+        )
+
+        home_team = [home_team] if isinstance(home_team, str) else home_team
+        away_team = [away_team] if isinstance(away_team, str) else away_team
+
+        simulations = predictive(home_team, away_team)
+
+        home_goals = simulations["home_goals"].detach().numpy().flatten()
+        away_goals = simulations["away_goals"].detach().numpy().flatten()
+
+        return home_goals, away_goals
