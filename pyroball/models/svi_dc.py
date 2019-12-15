@@ -5,18 +5,22 @@ from pyro import distributions as dist
 from pyro.optim import Adam
 from pyro.infer import Trace_ELBO, SVI, Predictive
 from pyro.poutine import condition
+from pyro.contrib.autoguide import AutoMultivariateNormal
 
 import torch
 import torch.distributions.constraints as constraints
 
+from pyroball.util import early_stopping
+
 logger = logging.getLogger(__name__)
 
 
-class SVIDixonColesModel:
+class VariationalDixonColesModel:
     def __init__(self):
         self.team_to_index = None
         self.index_to_team = None
         self.n_teams = None
+        self._svi = None
 
     def model(self, home_team, away_team):
 
@@ -36,51 +40,15 @@ class SVIDixonColesModel:
         home_rate = torch.exp(log_a[home_inds] + log_b[away_inds] + log_gamma)
         away_rate = torch.exp(log_a[away_inds] + log_b[home_inds])
 
-        with pyro.plate("matches", size=len(home_goals)) as ind:
+        with pyro.plate("matches", len(home_team)):
             pyro.sample("home_goals", dist.Poisson(home_rate))
             pyro.sample("away_goals", dist.Poisson(away_rate))
-
-    def guide(self, home_team, away_team):
-
-        scale_sigma_a = pyro.param(
-            "scale_sigma_a", torch.tensor(0.1), constraint=constraints.positive
-        )
-        scale_sigma_b = pyro.param(
-            "scale_sigma_b", torch.tensor(0.1), constraint=constraints.positive
-        )
-        loc_sigma_a = pyro.param("loc_sigma_a", torch.tensor(0.1))
-        loc_sigma_b = pyro.param("loc_sigma_b", torch.tensor(0.1))
-        pyro.sample("sigma_a", dist.LogNormal(loc_sigma_a, scale_sigma_a))
-        pyro.sample("sigma_b", dist.LogNormal(loc_sigma_b, scale_sigma_b))
-
-        scale_mu_b = pyro.param(
-            "scale_mu_b", torch.tensor(1.0), constraint=constraints.positive
-        )
-        loc_mu_b = pyro.param("loc_mu_b", torch.tensor(0.0))
-        pyro.sample("mu_b", dist.Normal(loc_mu_b, scale_mu_b))
-
-        scale_gamma = pyro.param(
-            "scale_mu_b", torch.tensor(1.0), constraint=constraints.positive
-        )
-        loc_gamma = pyro.param("loc_mu_b", torch.tensor(0.0))
-        pyro.sample("log_gamma", dist.Normal(loc_gamma, scale_gamma))
-
-        loc_a = pyro.param("loc_a", torch.zeros(self.n_teams))
-        loc_b = pyro.param("loc_b", torch.zeros(self.n_teams))
-        scale_a = pyro.param(
-            "scale_a", torch.ones(self.n_teams), constraint=constraints.positive
-        )
-        scale_b = pyro.param(
-            "scale_b", torch.ones(self.n_teams), constraint=constraints.positive
-        )
-
-        pyro.sample("log_a", dist.Normal(loc_a, scale_a))
-        pyro.sample("log_b", dist.Normal(loc_b, scale_b))
 
     def fit(
         self,
         df,
-        n_steps=500,
+        max_iter=500,
+        patience=5,
         optimiser_settings={"lr": 1.0e-2},
         elbo_kwargs={"num_particles": 5},
     ):
@@ -98,17 +66,15 @@ class SVIDixonColesModel:
         conditioned_model = condition(
             self.model, data={"home_goals": home_goals, "away_goals": away_goals}
         )
+        guide = AutoMultivariateNormal(conditioned_model)
 
         optimizer = Adam(optimiser_settings)
         elbo = Trace_ELBO(**elbo_kwargs)
-        svi = SVI(conditioned_model, self.guide, optimizer, loss=elbo)
+        svi = SVI(conditioned_model, guide, optimizer, loss=elbo)
 
         pyro.clear_param_store()
-        losses = []
-        for i in range(n_steps):
-            loss = svi.step(home_goals, away_goals, home_team, away_team)
-            losses.append(loss)
-            if i % 50 == 0:
-                logger.info(f"SVI loss: {loss}")
+        fitted_svi, losses = early_stopping(svi, home_team, away_team, max_iter=max_iter, patience=patience)
+
+        self._svi = fitted_svi
 
         return losses
