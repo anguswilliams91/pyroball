@@ -32,4 +32,3 @@ class HMCDixonColesModel:
         with numpyro.plate("matches", size=len(home_goals)):
             numpyro.sample("home_goals", dist.Poisson(home_rate), obs=home_goals)
             numpyro.sample("away_goals", dist.Poisson(away_rate), obs=away_goals)
-

@@ -75,7 +75,9 @@ class VariationalDixonColesModel:
         svi = SVI(conditioned_model, guide, optimizer, loss=elbo)
 
         pyro.clear_param_store()
-        fitted_svi, losses = early_stopping(svi, home_team, away_team, max_iter=max_iter, patience=patience)
+        fitted_svi, losses = early_stopping(
+            svi, home_team, away_team, max_iter=max_iter, patience=patience
+        )
 
         self._svi = fitted_svi
         self.guide = guide
@@ -86,10 +88,10 @@ class VariationalDixonColesModel:
     def _predict(self, home_team, away_team, num_samples=100):
 
         predictive = Predictive(
-            self.model, 
-            guide=self.guide, 
-            num_samples=num_samples, 
-            return_sites=("home_goals", "away_goals")
+            self.model,
+            guide=self.guide,
+            num_samples=num_samples,
+            return_sites=("home_goals", "away_goals"),
         )
 
         home_team = [home_team] if isinstance(home_team, str) else home_team

@@ -6,7 +6,7 @@ logger = logging.getLogger(__name__)
 def early_stopping(svi, *svi_args, max_iter=500, patience=20, **svi_kwargs):
     # stop early if SVI converged
     losses = []
-    counter = 0 
+    counter = 0
     for i in range(max_iter):
         loss = svi.step(*svi_args, **svi_kwargs)
         losses.append(loss)
@@ -21,5 +21,5 @@ def early_stopping(svi, *svi_args, max_iter=500, patience=20, **svi_kwargs):
 
         if i % 50 == 0:
             logger.info(f"Epoch {i} SVI loss: {loss}")
-    
+
     return svi, losses
