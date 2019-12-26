@@ -1,4 +1,3 @@
-from functools import lru_cache
 import logging
 
 import pyro
@@ -22,29 +21,40 @@ class VariationalDixonColesModel:
         self.index_to_team = None
         self.n_teams = None
         self.guide = None
-        self._svi = None
 
     def model(self, home_team, away_team):
 
         sigma_a = pyro.sample("sigma_a", dist.HalfNormal(1.0))
         sigma_b = pyro.sample("sigma_b", dist.HalfNormal(1.0))
         mu_b = pyro.sample("mu_b", dist.Normal(0.0, 1.0))
+        rho_raw = pyro.sample("rho_raw", dist.Beta(2, 2))
+        rho = pyro.deterministic("rho", 2.0 * rho_raw - 1.0)
 
         log_gamma = pyro.sample("log_gamma", dist.Normal(0, 1))
 
-        log_a = pyro.sample("log_a", dist.Normal(torch.zeros(self.n_teams), sigma_a))
-        log_b = pyro.sample(
-            "log_b", dist.Normal(torch.ones(self.n_teams) * mu_b, sigma_b)
-        )
-
+        with pyro.plate("teams", self.n_teams):
+            abilities = pyro.sample(
+                "abilities",
+                dist.MultivariateNormal(
+                    torch.tensor([0.0, mu_b]),
+                    covariance_matrix=torch.tensor(
+                        [
+                            [sigma_a ** 2.0, rho * sigma_a * sigma_b],
+                            [rho * sigma_a * sigma_b, sigma_b ** 2.0],
+                        ]
+                    ),
+                )
+            )
+        
+        log_a = abilities[:, 0]
+        log_b = abilities[:, 1]
         home_inds = torch.tensor([self.team_to_index[team] for team in home_team])
         away_inds = torch.tensor([self.team_to_index[team] for team in away_team])
         home_rate = torch.exp(log_a[home_inds] + log_b[away_inds] + log_gamma)
         away_rate = torch.exp(log_a[away_inds] + log_b[home_inds])
 
-        with pyro.plate("matches", len(home_team)):
-            pyro.sample("home_goals", dist.Poisson(home_rate))
-            pyro.sample("away_goals", dist.Poisson(away_rate))
+        pyro.sample("home_goals", dist.Poisson(home_rate))
+        pyro.sample("away_goals", dist.Poisson(away_rate))
 
     def fit(
         self,
@@ -79,12 +89,10 @@ class VariationalDixonColesModel:
             svi, home_team, away_team, max_iter=max_iter, patience=patience
         )
 
-        self._svi = fitted_svi
         self.guide = guide
 
         return losses
 
-    @lru_cache(maxsize=128)
     def _predict(self, home_team, away_team, num_samples=100):
 
         predictive = Predictive(
@@ -97,9 +105,17 @@ class VariationalDixonColesModel:
         home_team = [home_team] if isinstance(home_team, str) else home_team
         away_team = [away_team] if isinstance(away_team, str) else away_team
 
+        missing_teams = set(home_team + away_team) - set(self.team_to_index.keys())
+
+        for team in missing_teams:
+            new_index = max(self.team_to_index.values()) + 1
+            self.team_to_index[team] = new_index
+            self.index_to_team[new_index] = team
+            self.n_teams += 1
+
         simulations = predictive(home_team, away_team)
 
-        home_goals = simulations["home_goals"].detach().numpy().flatten()
-        away_goals = simulations["away_goals"].detach().numpy().flatten()
+        home_goals = simulations["home_goals"].detach().numpy()
+        away_goals = simulations["away_goals"].detach().numpy()
 
         return home_goals, away_goals
