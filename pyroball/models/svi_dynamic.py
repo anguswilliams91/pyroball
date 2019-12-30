@@ -98,8 +98,8 @@ class SVIDynamicModel:
 
         predictive = Predictive(
             self.model,
+            guide=self.guide,
             num_samples=num_samples,
-            posterior_samples=self.samples,
             return_sites=("home_goals", "away_goals"),
         )
 
@@ -116,8 +116,9 @@ class SVIDynamicModel:
 
         gameweek = (dates - self.min_date).dt.days // 7
 
-        predictions = predictive.get_samples(
-            random.PRNGKey(seed), home_team, away_team, gameweek
-        )
+        predictions = predictive.get_samples(home_team, away_team, gameweek)
 
-        return predictions["home_goals"], predictions["away_goals"]
+        return (
+            predictions["home_goals"].detach().numpy(),
+            predictions["away_goals"].detach().numpy(),
+        )
