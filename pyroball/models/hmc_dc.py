@@ -34,9 +34,9 @@ class HMCDixonColesModel:
                             [rho * sigma_a * sigma_b, sigma_b ** 2.0],
                         ]
                     ),
-                )
+                ),
             )
-        
+
         log_a = abilities[:, 0]
         log_b = abilities[:, 1]
         home_inds = np.array([self.team_to_index[team] for team in home_team])
@@ -47,12 +47,7 @@ class HMCDixonColesModel:
         pyro.sample("home_goals", dist.Poisson(home_rate).to_event(1))
         pyro.sample("away_goals", dist.Poisson(away_rate).to_event(1))
 
-    def fit(
-        self,
-        df,
-        iter=500,
-        seed=42
-    ):
+    def fit(self, df, iter=500, seed=42):
         teams = sorted(list(set(df["home_team"]) | set(df["away_team"])))
         home_team = df["home_team"].values
         away_team = df["away_team"].values
@@ -70,7 +65,7 @@ class HMCDixonColesModel:
         mcmc = MCMC(nuts_kernel, num_warmup=iter // 2, num_samples=iter)
         rng_key = random.PRNGKey(seed)
         mcmc.run(rng_key, home_team, away_team)
-        
+
         self.samples = mcmc.get_samples()
         mcmc.print_summary()
         return self

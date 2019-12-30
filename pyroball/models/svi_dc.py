@@ -43,9 +43,9 @@ class VariationalDixonColesModel:
                             [rho * sigma_a * sigma_b, sigma_b ** 2.0],
                         ]
                     ),
-                )
+                ),
             )
-        
+
         log_a = abilities[:, 0]
         log_b = abilities[:, 1]
         home_inds = torch.tensor([self.team_to_index[team] for team in home_team])
