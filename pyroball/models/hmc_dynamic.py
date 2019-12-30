@@ -69,7 +69,7 @@ class HMCDynamicModel:
         pyro.sample("home_goals", dist.Poisson(np.exp(home_rate)))
         pyro.sample("away_goals", dist.Poisson(np.exp(away_rate)))
 
-    def fit(self, df, iter=500, seed=42):
+    def fit(self, df, iter=500, seed=42, **kwargs):
         teams = sorted(list(set(df["home_team"]) | set(df["away_team"])))
         home_team = df["home_team"].values
         away_team = df["away_team"].values
@@ -86,7 +86,7 @@ class HMCDynamicModel:
             self.model, param_map={"home_goals": home_goals, "away_goals": away_goals}
         )
         nuts_kernel = NUTS(conditioned_model)
-        mcmc = MCMC(nuts_kernel, num_warmup=iter // 2, num_samples=iter)
+        mcmc = MCMC(nuts_kernel, num_warmup=iter // 2, num_samples=iter, **kwargs)
         rng_key = random.PRNGKey(seed)
         mcmc.run(rng_key, home_team, away_team, gameweek)
 
