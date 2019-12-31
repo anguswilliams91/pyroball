@@ -3,7 +3,9 @@ from pyro import distributions as dist
 from pyro.infer import Trace_ELBO, SVI, Predictive
 from pyro.optim import Adam
 from pyro.poutine import condition
-from pyro.contrib.autoguide import AutoMultivariateNormal, AutoDiagonalNormal
+from pyro.contrib.autoguide import (
+    AutoMultivariateNormal, AutoDiagonalNormal, AutoIAFNormal, AutoLaplaceApproximation
+)
 
 import torch
 
@@ -19,31 +21,29 @@ class SVIDynamicModel:
 
     def model(self, home_team, away_team, gameweek):
         n_gameweeks = max(gameweek) + 1
-        sigma_0 = pyro.sample("sigma_0", dist.HalfNormal(5))
-        sigma_b = pyro.sample("sigma_b", dist.HalfNormal(5))
         gamma = pyro.sample("gamma", dist.LogNormal(0, 1))
-
-        b = pyro.sample("b", dist.Normal(0, 1))
-
-        loc_mu_b = pyro.sample("loc_mu_b", dist.Normal(0, 1))
-        scale_mu_b = pyro.sample("scale_mu_b", dist.HalfNormal(1))
+        mu_b = pyro.sample("mu_b", dist.Normal(0, 1))
 
         with pyro.plate("teams", self.n_teams):
 
-            log_a0 = pyro.sample("log_a0", dist.Normal(0, sigma_0))
-            mu_b = pyro.sample("mu_b", dist.Normal(loc_mu_b, scale_mu_b))
+            log_a0 = pyro.sample("log_a0", dist.Normal(0, 1))
+            log_b0 = pyro.sample("log_b0", dist.Normal(mu_b, 1))
             sigma_rw = pyro.sample("sigma_rw", dist.HalfNormal(0.1))
 
             with pyro.plate("random_walk", n_gameweeks - 1):
-                diffs = pyro.sample("diff", dist.Normal(0, sigma_rw))
+                diffs_a = pyro.sample("diff_a", dist.Normal(0, sigma_rw))
+                diffs_b = pyro.sample("diff_b", dist.Normal(0, sigma_rw))
 
-            diffs = torch.cat((log_a0[None, :], diffs), axis=0)
-            log_a = torch.cumsum(diffs, axis=0)
+            log_a0_t = log_a0 if log_a0.dim() == 2 else log_a0[None, :]
+            diffs_a = torch.cat((log_a0_t, diffs_a), axis=0)
+            log_a = torch.cumsum(diffs_a, axis=0)
 
-            with pyro.plate("weeks", n_gameweeks):
-                log_b = pyro.sample("log_b", dist.Normal(mu_b + b * log_a, sigma_b))
+            log_b0_t = log_b0 if log_b0.dim() == 2 else log_b0[None, :]
+            diffs_b = torch.cat((log_b0_t, diffs_b), axis=0)
+            log_b = torch.cumsum(diffs_b, axis=0)
 
         pyro.sample("log_a", dist.Delta(log_a), obs=log_a)
+        pyro.sample("log_b", dist.Delta(log_b), obs=log_b)
         home_inds = torch.tensor([self.team_to_index[team] for team in home_team])
         away_inds = torch.tensor([self.team_to_index[team] for team in away_team])
         home_rate = torch.clamp(
@@ -59,8 +59,8 @@ class SVIDynamicModel:
     def fit(
         self,
         df,
-        max_iter=500,
-        patience=5,
+        max_iter=6000,
+        patience=200,
         optimiser_settings={"lr": 1.0e-2},
         elbo_kwargs={"num_particles": 5},
     ):
@@ -106,7 +106,7 @@ class SVIDynamicModel:
         home_team = [home_team] if isinstance(home_team, str) else home_team
         away_team = [away_team] if isinstance(away_team, str) else away_team
 
-        missing_teams = set(home_team + away_team) - set(self.team_to_index.keys())
+        missing_teams = set(list(home_team) + list(away_team)) - set(self.team_to_index.keys())
 
         for team in missing_teams:
             new_index = max(self.team_to_index.values()) + 1

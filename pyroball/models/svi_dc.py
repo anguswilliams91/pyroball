@@ -60,7 +60,7 @@ class VariationalDixonColesModel:
         self,
         df,
         max_iter=500,
-        patience=5,
+        patience=20,
         optimiser_settings={"lr": 1.0e-2},
         elbo_kwargs={"num_particles": 5},
     ):
